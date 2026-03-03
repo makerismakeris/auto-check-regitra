@@ -1,4 +1,6 @@
-require('dotenv').config();
+if (!process.env.GITHUB_ACTIONS) {
+  require('dotenv').config({ quiet: true });
+}
 
 const fs = require('fs/promises');
 const path = require('path');
@@ -13,6 +15,13 @@ function requireEnv(name) {
     throw new Error(`Missing required environment variable: ${name}`);
   }
   return value;
+}
+
+function validateRequiredEnv() {
+  requireEnv('REG_DOC_NUMBER');
+  requireEnv('PLATE_NUMBER');
+  requireEnv('TELEGRAM_BOT_TOKEN');
+  requireEnv('TELEGRAM_CHAT_ID');
 }
 
 function parseStatus(text) {
@@ -88,11 +97,15 @@ async function runRegitraCheck() {
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
   });
 
-  const page = await browser.newPage({
+  const context = await browser.newContext({
+    locale: 'lt-LT',
+    timezoneId: 'Europe/Vilnius',
     viewport: { width: 1280, height: 1600 },
     userAgent:
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
   });
+
+  const page = await context.newPage();
 
   try {
     await page.goto(REGITRA_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
@@ -160,7 +173,11 @@ async function runRegitraCheck() {
     }
 
     if (!filledRegDoc || !filledPlate) {
-      throw new Error('Could not locate registration document or plate number fields.');
+      const pageTitle = await page.title().catch(() => 'unknown');
+      const currentUrl = page.url();
+      throw new Error(
+        `Could not locate registration document or plate number fields. URL: ${currentUrl}. Title: ${pageTitle}`
+      );
     }
 
     await checkAllBoxes(page);
@@ -181,8 +198,15 @@ async function runRegitraCheck() {
     await page.waitForTimeout(2500);
 
     const content = await page.textContent('body');
-    if ((content || '').toLowerCase().includes('what code is in the image')) {
-      throw new Error('Automation blocked by anti-bot CAPTCHA challenge.');
+    const compactContent = (content || '').toLowerCase();
+    if (
+      compactContent.includes('what code is in the image') ||
+      compactContent.includes('captcha') ||
+      compactContent.includes('cloudflare') ||
+      compactContent.includes('just a moment') ||
+      compactContent.includes('verify you are human')
+    ) {
+      throw new Error('Automation blocked by anti-bot/CAPTCHA page on GitHub runner.');
     }
 
     return {
@@ -202,6 +226,7 @@ async function runRegitraCheck() {
 
     throw error;
   } finally {
+    await context.close();
     await browser.close();
   }
 }
@@ -231,6 +256,7 @@ async function sendTelegram(message) {
 
 async function main() {
   try {
+    validateRequiredEnv();
     const result = await runRegitraCheck();
     await sendTelegram(buildMessage(result));
     console.log(JSON.stringify(result, null, 2));

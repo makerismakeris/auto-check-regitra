@@ -7,7 +7,7 @@ on:
 
 jobs:
   run-check:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,6 +30,7 @@ jobs:
           PLATE_NUMBER: ${{ secrets.PLATE_NUMBER }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TZ: Europe/Vilnius
         run: npm run check
 
       - name: Upload debug files
