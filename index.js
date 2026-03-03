@@ -1,5 +1,7 @@
 require('dotenv').config();
 
+const fs = require('fs/promises');
+const path = require('path');
 const axios = require('axios');
 const { chromium } = require('playwright');
 
@@ -33,6 +35,17 @@ function parseStatus(text) {
 async function fillInputByLabel(page, labels, value) {
   for (const labelText of labels) {
     const input = page.locator(`label:has-text("${labelText}")`).locator('..').locator('input').first();
+    if (await input.count()) {
+      await input.fill(value);
+      return true;
+    }
+  }
+  return false;
+}
+
+async function fillFirstVisible(page, selectors, value) {
+  for (const selector of selectors) {
+    const input = page.locator(selector).first();
     if (await input.count()) {
       await input.fill(value);
       return true;
@@ -102,16 +115,46 @@ async function runRegitraCheck() {
       filledPlate = true;
     }
 
-    if (!filledRegDoc || !filledPlate) {
+    if (!filledRegDoc) {
       filledRegDoc = await fillInputByLabel(
         page,
         ['Registracijos dokumento numeris', 'Registracijos dokumento Nr.'],
         regDocNumber
       );
+    }
 
+    if (!filledPlate) {
       filledPlate = await fillInputByLabel(
         page,
         ['Valstybinis numeris', 'Valstybinis registracijos numeris', 'Valst. numeris'],
+        plateNumber
+      );
+    }
+
+    if (!filledRegDoc) {
+      filledRegDoc = await fillFirstVisible(
+        page,
+        [
+          'input[name*="registration" i]',
+          'input[id*="registration" i]',
+          'input[name*="document" i]',
+          'input[id*="document" i]',
+          'input[placeholder*="Registracijos" i]',
+        ],
+        regDocNumber
+      );
+    }
+
+    if (!filledPlate) {
+      filledPlate = await fillFirstVisible(
+        page,
+        [
+          'input[name*="plate" i]',
+          'input[id*="plate" i]',
+          'input[name*="number" i]',
+          'input[id*="number" i]',
+          'input[placeholder*="Valstybinis" i]',
+        ],
         plateNumber
       );
     }
@@ -146,6 +189,18 @@ async function runRegitraCheck() {
       checkedAt: new Date().toISOString(),
       status: parseStatus(content || ''),
     };
+  } catch (error) {
+    const debugDir = path.join(process.cwd(), 'debug');
+    await fs.mkdir(debugDir, { recursive: true });
+
+    try {
+      await page.screenshot({ path: path.join(debugDir, 'failed-page.png'), fullPage: true });
+      await fs.writeFile(path.join(debugDir, 'failed-page.html'), await page.content(), 'utf8');
+    } catch (debugError) {
+      console.error(`Debug capture failed: ${debugError.message}`);
+    }
+
+    throw error;
   } finally {
     await browser.close();
   }
