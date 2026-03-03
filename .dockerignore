@@ -1,0 +1,10 @@
+node_modules
+.env
+.git
+.gitignore
+__MACOSX
+debug.html
+debug.png
+check.log
+npm-debug.log*
+.DS_Store
